@@ -1,10 +1,12 @@
-use crate::{config::MSMGate, coords, util::decompose, AssignedPoint, AssignedValue, RegionCtx};
+use crate::{coords, util::decompose, AssignedPoint, AssignedValue, RegionCtx};
 use ff::PrimeField;
 use halo2::{
     circuit::{Layouter, Value},
     halo2curves::CurveAffine,
     plonk::Error,
 };
+
+use super::config::MSMGate;
 
 impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
     pub fn get_constant(
@@ -78,12 +80,10 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         b: &AssignedPoint<App>,
     ) -> Result<AssignedPoint<App>, Error> {
         ctx.enable(self.s_add)?;
-
         let t = a.x.value().zip(b.x.value()).map(|(a_x, b_x)| *b_x - *a_x);
         let t = t * t;
         let inverse_t = t.map(|t| t.invert().unwrap());
         let (out_x, out_y) = a + b;
-
         ctx.enable(self.s_add)?;
         ctx.copy(|| "add: a_x", self.a1, &a.x)?;
         ctx.copy(|| "add: a_y", self.a2, &a.y)?;
@@ -103,22 +103,21 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
     pub fn rw_add(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        address: &AssignedValue<F>,
+        address: &Value<F>,
         b: &AssignedPoint<App>,
     ) -> Result<AssignedPoint<App>, Error> {
         let timestamp = self.memory.timestamp();
-        let a: Value<App> = self.memory.read(address.value().map(|v| *v));
+        ctx.enable(self.s_add)?;
+        ctx.enable(self.s_query)?;
+        ctx.enable(self.s_query_read)?;
+        let address = ctx.advice(|| "rwadd: address", self.a0, *address)?;
+        let a: Value<App> = self.memory.read(&address.value().map(|v| *v));
         let out = b + &a;
         let (a_x, a_y) = coords(a).unzip();
         let (out_x, out_y) = coords(out).unzip();
         let t = b.x.value().map(|v| *v) - a_x;
         let t = t * t;
         let inverse_t = t.map(|t| t.invert().unwrap());
-
-        ctx.enable(self.s_add)?;
-        ctx.enable(self.s_query)?;
-        ctx.enable(self.s_query_read)?;
-        ctx.copy(|| "rwadd: address", self.a0, address)?;
         ctx.advice(|| "rwadd: a_x", self.a1, a_x)?;
         ctx.advice(|| "rwadd: a_y", self.a2, a_y)?;
         ctx.copy(|| "rwadd: b_x", self.a3, &b.x)?;
@@ -130,9 +129,9 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         )?;
         ctx.next();
         self.memory
-            .write(address.value().map(|v| *v), &out_x.zip(out_y));
+            .write(&address.value().map(|v| *v), &out_x.zip(out_y));
         ctx.enable(self.s_query)?;
-        ctx.copy(|| "rwadd: address", self.a0, address)?;
+        ctx.copy(|| "rwadd: address", self.a0, &address)?;
         let out_x = ctx.advice(|| "rwadd: out_x", self.a1, out_x)?;
         let out_y = ctx.advice(|| "rwadd: out_y", self.a2, out_y)?;
         ctx.advice(|| "rwadd: t", self.a3, t)?;
@@ -152,7 +151,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         b: &AssignedPoint<App>,
     ) -> Result<AssignedPoint<App>, Error> {
         let timestamp = self.memory.queries.len();
-        let a: Value<App> = self.memory.read(address.value().map(|v| *v));
+        let a: Value<App> = self.memory.read(&address.value().map(|v| *v));
         let out = b + &a;
         let (a_x, a_y) = coords(a).unzip();
         let (out_x, out_y) = coords(out).unzip();
@@ -190,9 +189,10 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
     ) -> Result<(), Error> {
         let timestamp = self.memory.queries.len();
         let coords = point.coords();
-        self.memory.write(address.value().map(|v| *v), &coords);
+        self.memory.write(&address.value().map(|v| *v), &coords);
         let (x, y) = coords.unzip();
         ctx.enable(self.s_query)?;
+        ctx.enable(self.s_range)?;
         ctx.copy(|| "write point: address", self.a0, address)?;
         ctx.advice(|| "write point: x", self.a1, x)?;
         ctx.advice(|| "write point: y", self.a2, y)?;
@@ -212,7 +212,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         address: &AssignedValue<F>,
     ) -> Result<AssignedPoint<App>, Error> {
         let timestamp = self.memory.queries.len();
-        let point: Value<App> = self.memory.read(address.value().map(|v| *v));
+        let point: Value<App> = self.memory.read(&address.value().map(|v| *v));
         let (x, y) = coords(point).unzip();
         ctx.enable(self.s_query)?;
         ctx.enable(self.s_query_read)?;
@@ -288,25 +288,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         assigned.reverse();
         Ok(assigned)
     }
-    pub fn layout_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
-        ly.assign_table(
-            || "",
-            |mut table| {
-                let mut offset = 0;
-                let values: Vec<F> = (0..1 << self.window).map(|e| F::from(e)).collect();
-                for value in values.iter() {
-                    table.assign_cell(
-                        || "table value",
-                        self.range_table,
-                        offset,
-                        || Value::known(*value),
-                    )?;
-                    offset += 1;
-                }
-                Ok(())
-            },
-        )
-    }
     pub fn all_zero(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         ctx.empty(|| "all zero", self.a0)?;
         ctx.empty(|| "all zero", self.a1)?;
@@ -349,6 +330,25 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
                 Ok(())
             },
         )
+    }
+    pub fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
+        let max_limb = 1 << self.window;
+        ly.assign_table(
+            || "range table",
+            |mut table| {
+                for i in 0..max_limb {
+                    let value = F::from(i);
+                    table.assign_cell(
+                        || "value in range",
+                        self.range_table,
+                        i as usize,
+                        || Value::known(value),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
     }
 }
 

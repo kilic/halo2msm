@@ -48,7 +48,7 @@ impl<F: PrimeField + Ord> Memory<F> {
     pub(crate) fn timestamp(&self) -> usize {
         self.queries.len()
     }
-    pub(crate) fn read<C: CurveAffine<Base = F>>(&mut self, address: Value<F>) -> Value<C> {
+    pub(crate) fn read<C: CurveAffine<Base = F>>(&mut self, address: &Value<F>) -> Value<C> {
         let coords = address.map(|address| {
             let value: &(F, F) = self.state.get(&address).expect("must be written first");
             *value
@@ -58,7 +58,7 @@ impl<F: PrimeField + Ord> Memory<F> {
         self.add_query(&query);
         x.zip(y).map(|(x, y)| C::from_xy(x, y).unwrap())
     }
-    pub(crate) fn write(&mut self, address: Value<F>, coords: &Value<(F, F)>) {
+    pub(crate) fn write(&mut self, address: &Value<F>, coords: &Value<(F, F)>) {
         address.zip(coords.clone()).map(|(address, coords)| {
             self.state.insert(address, coords);
         });

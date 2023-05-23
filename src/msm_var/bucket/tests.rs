@@ -1,57 +1,20 @@
-use std::marker::PhantomData;
-
-use crate::util::compose;
-use crate::{config::MSMGate, RegionCtx};
+use crate::util::multiexp_naive_var;
+use crate::RegionCtx;
 use ff::Field;
 use ff::PrimeField;
 use group::Curve;
 use group::Group;
 use halo2::dev::MockProver;
-use halo2::halo2curves::pasta::{EpAffine, EqAffine, Fp, Fq};
-
 use halo2::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::CurveAffine,
     plonk::Error,
     plonk::{Circuit, ConstraintSystem},
 };
-
-use halo2::arithmetic::CurveExt;
-pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
-where
-    <C::ScalarExt as PrimeField>::Repr: AsRef<[u8]>,
-{
-    assert!(!point.is_empty());
-    assert_eq!(point.len(), scalar.len());
-    point
-        .iter()
-        .zip(scalar.iter())
-        .fold(C::identity(), |acc, (point, scalar)| {
-            acc + (*point * *scalar)
-        })
-}
-
-pub(crate) fn modulus<F: PrimeField>() -> BigUint {
-    BigUint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-}
-
-pub(crate) fn from_big<F: PrimeField>(e: BigUint) -> F {
-    let modulus = modulus::<F>();
-    let e = e % modulus;
-    F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
-}
-
-fn from_str<C: CurveAffine>(x: &str, y: &str) -> C {
-    use num_bigint::BigUint as Big;
-    use num_traits::Num;
-    let x: C::Base = from_big(Big::from_str_radix(x, 16).unwrap());
-    let y: C::Base = from_big(Big::from_str_radix(y, 16).unwrap());
-    C::from_xy(x, y).unwrap()
-}
-
-use num_bigint::BigUint;
-use num_traits::Num;
 use rand_core::OsRng;
+use std::marker::PhantomData;
+
+use super::config::MSMGate;
 
 #[derive(Default, Clone, Debug)]
 struct Params {
@@ -66,6 +29,7 @@ struct TestConfig<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
 struct MyCircuit<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     _marker: PhantomData<(F, App)>,
     window: usize,
+    number_of_points: usize,
 }
 
 impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F, App> {
@@ -77,6 +41,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         Self {
             _marker: PhantomData,
             window: self.window,
+            number_of_points: self.number_of_points,
         }
     }
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
@@ -103,27 +68,22 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
             };
         }
         macro_rules! f {
-            // I just want not to see too much cloned expressions around :/ this is a bit less ugly
             ($e:expr) => {
                 F::from($e)
             };
         }
         let ly = &mut ly;
-        let rand_base = || F::random(OsRng);
         let rand_scalar = || App::Scalar::random(OsRng);
-        // let rand_point = || App::CurveExt::random(OsRng).to_affine();
         let rand_point = || App::CurveExt::random(OsRng);
-        let rand_affine = || App::CurveExt::random(OsRng).to_affine();
+        // let rand_affine = || rand_point().to_affine();
 
-        // cfg.msm_gate.layout_table(ly)?;
+        let number_of_points = self.number_of_points;
         ly.assign_region(
             || "app",
             |region| {
                 cfg.msm_gate.unassign_constants();
                 cfg.msm_gate.memory.clear_queries();
                 let ctx = &mut RegionCtx::new(region);
-
-                let number_of_points = 10000;
                 let points: Vec<_> = (0..number_of_points)
                     .map(|_| rand_point())
                     .collect::<Vec<_>>();
@@ -143,15 +103,23 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                     .into_iter()
                     .map(|scalar| v!(scalar))
                     .collect::<Vec<_>>();
-                let res1 = cfg
-                    .msm_gate
-                    .msm_var(ctx, &points[..], &scalars[..], self.window)?;
+                let res1 = cfg.msm_gate.msm_var(ctx, &points[..], &scalars[..])?;
                 let offset = ctx.offset();
-                println!("row per term {}", offset / number_of_points);
+                println!(
+                    "bucket row per term {}, {}",
+                    self.window,
+                    offset / number_of_points
+                );
                 cfg.msm_gate.equal(ctx, &res0, &res1)?;
                 Ok(())
             },
         )?;
+        println!(
+            "mem row per term {}, {}",
+            self.window,
+            cfg.msm_gate.memory.timestamp() / number_of_points
+        );
+        cfg.msm_gate.layout_range_table(ly)?;
         cfg.msm_gate.layout_sorted_rw(ly)?;
         Ok(())
     }
@@ -164,11 +132,14 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
 }
 
 #[test]
-fn test_msm_var() {
-    const K: u32 = 23;
+fn test_bucket_msm_var() {
+    use halo2::halo2curves::pasta::{EqAffine, Fq};
+    const K: u32 = 18;
+    let window = 8;
     let circuit = MyCircuit::<Fq, EqAffine> {
         _marker: PhantomData::<(Fq, EqAffine)>,
-        window: 8,
+        window,
+        number_of_points: 1000,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {

@@ -1,15 +1,8 @@
-use core::num;
-
-use crate::{config::MSMGate, AssignedPoint, RegionCtx};
+use super::config::MSMGate;
+use crate::{util::decompose, AssignedPoint, RegionCtx};
 use ff::PrimeField;
 use group::{Curve, Group};
 use halo2::{circuit::Value, halo2curves::CurveAffine, plonk::Error};
-
-macro_rules! div_ceil {
-    ($a:expr, $b:expr) => {
-        (($a - 1) / $b) + 1
-    };
-}
 
 impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
     pub(crate) fn reset_buckets(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
@@ -57,9 +50,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
                         |(sum, acc), bucket| {
                             let sum = sum + bucket;
                             (sum, acc + sum)
-                            // let acc = acc + sum;
-                            // let sum = sum + bucket;
-                            // (sum, acc)
                         },
                     )
                     .1;
@@ -85,41 +75,45 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             .map(|point| self.get_constant_point(ctx, point))
             .collect::<Result<Vec<_>, _>>()
     }
+    fn decompose_scalars(&self, scalars: &[Value<App::Scalar>]) -> Vec<Vec<Value<F>>> {
+        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, self.window);
+        let scalars = scalars
+            .iter()
+            .map(|scalar| {
+                let decomposed = scalar.map(|scalar| {
+                    let mut decomposed: Vec<F> = decompose(scalar, number_of_rounds, self.window);
+                    decomposed.reverse();
+                    decomposed
+                });
+                decomposed.transpose_vec(number_of_rounds)
+            })
+            .collect::<Vec<_>>();
+        scalars
+    }
     pub fn msm_var(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         points: &[AssignedPoint<App>],
         scalars: &[Value<App::Scalar>],
-        window: usize,
     ) -> Result<AssignedPoint<App>, Error> {
         let number_of_points = points.len();
         assert!(number_of_points > 0);
         assert_eq!(number_of_points, scalars.len());
-        let number_of_buckets = 1 << window;
-        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, window);
-        let scalars = scalars
-            .iter()
-            .map(|scalar| {
-                let scalar = self.assign_scalar(ctx, scalar)?;
-                Ok(scalar)
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        let number_of_buckets = 1 << self.window;
+        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, self.window);
+        let scalars = self.decompose_scalars(scalars);
         let mut acc = None;
-
-        for j in 0..number_of_rounds {
-            if j != 0 {
-                for _ in 0..window {
+        for round in 0..number_of_rounds {
+            if round != 0 {
+                for _ in 0..self.window {
                     acc = Some(self.double(ctx, &acc.unwrap())?)
                 }
             }
-
             self.reset_buckets(ctx)?;
-
             // accumulate buckets
             for (scalar, point) in scalars.iter().zip(points.iter()) {
-                self.rw_add(ctx, &scalar[j], point)?;
+                self.rw_add(ctx, &scalar[round], point)?;
             }
-
             // aggregate buckets
             let last = self.get_constant(ctx, F::from(number_of_buckets - 1))?;
             let mut inner_acc = self.read_point(ctx, &last)?;

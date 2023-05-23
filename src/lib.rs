@@ -19,13 +19,7 @@ macro_rules! div_ceil {
         (($a - 1) / $b) + 1
     };
 }
-
-pub mod assignments;
-pub mod config;
 pub mod msm_var;
-pub(crate) mod rw;
-#[cfg(test)]
-mod tests;
 pub(crate) mod util;
 
 pub type AssignedValue<F> = AssignedCell<F, F>;

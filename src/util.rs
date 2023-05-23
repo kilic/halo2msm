@@ -1,4 +1,8 @@
 use ff::PrimeField;
+use halo2::{
+    arithmetic::best_multiexp,
+    halo2curves::{CurveAffine, CurveExt},
+};
 use num_bigint::BigUint;
 use num_traits::{Num, One, Zero};
 use std::ops::Shl;
@@ -59,4 +63,23 @@ pub(crate) fn compose_big(input: Vec<BigUint>, bit_len: usize) -> BigUint {
         .iter()
         .rev()
         .fold(BigUint::zero(), |acc, val| (acc << bit_len) + val)
+}
+pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
+where
+    <C::ScalarExt as PrimeField>::Repr: AsRef<[u8]>,
+{
+    assert!(!point.is_empty());
+    assert_eq!(point.len(), scalar.len());
+    point
+        .iter()
+        .zip(scalar.iter())
+        .fold(C::identity(), |acc, (point, scalar)| {
+            acc + (*point * *scalar)
+        })
+}
+pub(crate) fn from_str<C: CurveAffine>(x: &str, y: &str) -> C {
+    use num_bigint::BigUint as Big;
+    let x: C::Base = big_to_fe(Big::from_str_radix(x, 16).unwrap());
+    let y: C::Base = big_to_fe(Big::from_str_radix(y, 16).unwrap());
+    C::from_xy(x, y).unwrap()
 }
