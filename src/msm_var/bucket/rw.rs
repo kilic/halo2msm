@@ -13,7 +13,7 @@ pub(crate) struct Query<F: PrimeField + Ord> {
 #[derive(Clone, Debug)]
 pub(crate) struct SortedQuery<F: PrimeField + Ord> {
     pub(crate) is_read: bool,
-    pub(crate) timestamp: F,
+    pub(crate) timestamp: usize,
     pub(crate) address: F,
     pub(crate) x: F,
     pub(crate) y: F,
@@ -81,7 +81,7 @@ impl<F: PrimeField + Ord> Memory<F> {
                 let sorted_query: Value<SortedQuery<F>> =
                     address.zip(x).zip(y).map(|((address, x), y)| SortedQuery {
                         is_read: query.is_read,
-                        timestamp: F::from(timestamp as u64),
+                        timestamp,
                         address,
                         x,
                         y,

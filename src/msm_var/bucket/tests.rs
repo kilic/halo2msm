@@ -53,7 +53,8 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let constant = meta.fixed_column();
         let range_table = meta.lookup_table_column();
         let window = params.window;
-        let aux = App::CurveExt::random(OsRng).to_affine();
+        // let aux = App::CurveExt::random(OsRng).to_affine();
+        let aux = (App::CurveExt::generator() * App::Scalar::from(500)).to_affine();
         let msm_gate =
             MSMGate::configure(meta, a0, a1, a2, a3, a4, range_table, constant, window, aux);
         Self::Config { msm_gate }
@@ -73,9 +74,10 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
             };
         }
         let ly = &mut ly;
-        let rand_scalar = || App::Scalar::random(OsRng);
-        let rand_point = || App::CurveExt::random(OsRng);
-        // let rand_affine = || rand_point().to_affine();
+        // let rand_scalar = || App::Scalar::random(OsRng);
+        let rand_scalar = || App::Scalar::ONE;
+        // let rand_point = || App::CurveExt::random(OsRng);
+        let rand_point = || App::CurveExt::generator();
 
         let number_of_points = self.number_of_points;
         ly.assign_region(
@@ -132,14 +134,14 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
 }
 
 #[test]
-fn test_bucket_msm_var() {
+fn test_bucket_narrow_msm_var() {
     use halo2::halo2curves::pasta::{EqAffine, Fq};
-    const K: u32 = 18;
+    const K: u32 = 21;
     let window = 8;
     let circuit = MyCircuit::<Fq, EqAffine> {
         _marker: PhantomData::<(Fq, EqAffine)>,
         window,
-        number_of_points: 1000,
+        number_of_points: 10000,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {

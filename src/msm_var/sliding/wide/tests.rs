@@ -20,7 +20,6 @@ use super::config::MSMGate;
 struct Params {
     window: usize,
 }
-
 #[derive(Clone, Debug)]
 struct TestConfig<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     msm_gate: MSMGate<F, App>,
@@ -49,12 +48,30 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let a2 = meta.advice_column();
         let a3 = meta.advice_column();
         let a4 = meta.advice_column();
+        let a5 = meta.advice_column();
+        let a6 = meta.advice_column();
+        let a7 = meta.advice_column();
+        let a8 = meta.advice_column();
         let constant = meta.fixed_column();
         let range_table = meta.lookup_table_column();
         let window = params.window;
         let aux = App::CurveExt::random(OsRng).to_affine();
-        let msm_gate =
-            MSMGate::configure(meta, a0, a1, a2, a3, a4, range_table, constant, window, aux);
+        let msm_gate = MSMGate::configure(
+            meta,
+            a0,
+            a1,
+            a2,
+            a3,
+            a4,
+            a5,
+            a6,
+            a7,
+            a8,
+            range_table,
+            constant,
+            window,
+            aux,
+        );
         Self::Config { msm_gate }
     }
     fn configure(_: &mut ConstraintSystem<F>) -> Self::Config {
@@ -114,10 +131,9 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
 }
 
 #[test]
-fn test_sliding_narrow_msm_var() {
+fn test_sliding_wide_msm_var() {
     use halo2::halo2curves::pasta::{EqAffine, Fq};
     const K: u32 = 21;
-
     let window = 4;
     let circuit = MyCircuit::<Fq, EqAffine> {
         _marker: PhantomData::<(Fq, EqAffine)>,

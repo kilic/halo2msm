@@ -4,3 +4,4 @@ pub mod msm_var;
 pub(crate) mod rw;
 #[cfg(test)]
 mod tests;
+pub mod wide;

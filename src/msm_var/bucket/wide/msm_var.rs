@@ -133,6 +133,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
                 Some(_) => Some(self.add(ctx, &inner_acc, &acc.unwrap())?),
             };
         }
+
         let correction_point = self.correction_point(ctx)?;
         Ok(self.add(ctx, &acc.unwrap(), &correction_point)?)
     }

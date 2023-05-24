@@ -5,7 +5,7 @@ use group::Curve;
 use halo2::{
     circuit::{AssignedCell, Cell, Region, Value},
     halo2curves::CurveAffine,
-    plonk::{Advice, Column, Error, Fixed, Selector},
+    plonk::{Advice, Any, Column, Error, Fixed, Selector},
 };
 
 macro_rules! e {
@@ -62,7 +62,7 @@ impl<C: CurveAffine> AssignedPoint<C> {
         let y = self.y.value().map(|v| *v);
         x.zip(y)
     }
-    pub fn double(&self) -> (Value<C::Base>, Value<C::Base>) {
+    pub fn dbl(&self) -> (Value<C::Base>, Value<C::Base>) {
         let this = self.value();
         let res = this.map(|this| (this + this).to_affine());
         coords(res).unzip()
@@ -151,14 +151,28 @@ impl<'a, F: Field> RegionCtx<'a, F> {
     pub fn empty<A, AR>(
         &mut self,
         annotation: A,
-        column: Column<Advice>,
+        column: Column<Any>,
     ) -> Result<AssignedValue<F>, Error>
     where
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        self.region
-            .assign_advice(annotation, column, self.offset, || Value::known(F::ZERO))
+        let col = column.column_type();
+        match column.column_type() {
+            Any::Advice(_) => self.region.assign_advice(
+                annotation,
+                column.try_into().unwrap(),
+                self.offset,
+                || Value::known(F::ZERO),
+            ),
+            Any::Fixed => self.region.assign_fixed(
+                annotation,
+                column.try_into().unwrap(),
+                self.offset,
+                || Value::known(F::ZERO),
+            ),
+            _ => panic!("Cannot assign to instance column"),
+        }
     }
     pub fn copy<A, AR>(
         &mut self,
