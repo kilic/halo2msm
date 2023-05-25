@@ -1,11 +1,15 @@
-use super::config::MSMGate;
-use crate::{util::decompose, AssignedPoint, RegionCtx};
+use super::super::instructions::MSMGate;
+use super::config::VarMSMGateWide;
+use crate::{msm_var::bucket::instructions::MSMHelper, util::decompose, AssignedPoint, RegionCtx};
 use ff::PrimeField;
 use group::{Curve, Group};
 use halo2::{circuit::Value, halo2curves::CurveAffine, plonk::Error};
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
-    pub(crate) fn reset_buckets(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMHelper<F, App> for VarMSMGateWide<F, App> {
+    fn window(&self) -> usize {
+        self.window
+    }
+    fn reset_buckets(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         let buckets = self.initial_buckets(ctx)?;
         for (address, bucket) in buckets.iter().enumerate() {
             let address = F::from(address as u64);
@@ -89,52 +93,5 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             })
             .collect::<Vec<_>>();
         scalars
-    }
-    pub fn msm_var(
-        &mut self,
-        ctx: &mut RegionCtx<'_, F>,
-        points: &[AssignedPoint<App>],
-        scalars: &[Value<App::Scalar>],
-    ) -> Result<AssignedPoint<App>, Error> {
-        let number_of_points = points.len();
-        assert!(number_of_points > 0);
-        assert_eq!(number_of_points, scalars.len());
-        let number_of_buckets = 1 << self.window;
-        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, self.window);
-        let scalars = self.decompose_scalars(scalars);
-        let mut acc = None;
-        for round in 0..number_of_rounds {
-            if round != 0 {
-                for _ in 0..self.window {
-                    acc = Some(self.dbl(ctx, &acc.unwrap())?)
-                }
-            }
-            self.reset_buckets(ctx)?;
-            // accumulate buckets
-            for (scalar, point) in scalars.iter().zip(points.iter()) {
-                self.rw_add(ctx, &scalar[round], point)?;
-            }
-            // aggregate buckets
-            let last = self.get_constant(ctx, F::from(number_of_buckets - 1))?;
-            let mut inner_acc = self.read_point(ctx, &last)?;
-            let mut sum = inner_acc.clone();
-
-            for i in (1..number_of_buckets - 1).rev() {
-                let address = self.get_constant(ctx, F::from(i))?;
-                // sum = B_0 + B_1 + B_2 + ...
-                sum = self.read_add(ctx, &address, &sum)?;
-                // inner_acc = 0*B_0 + 1*B_1 + 2*B_2 + ...
-                inner_acc = self.add(ctx, &sum, &inner_acc)?;
-            }
-            let address = self.get_constant(ctx, F::ZERO)?;
-            let _dummy_read = self.read_point(ctx, &address)?;
-            acc = match acc {
-                None => Some(inner_acc),
-                Some(_) => Some(self.add(ctx, &inner_acc, &acc.unwrap())?),
-            };
-        }
-
-        let correction_point = self.correction_point(ctx)?;
-        Ok(self.add(ctx, &acc.unwrap(), &correction_point)?)
     }
 }

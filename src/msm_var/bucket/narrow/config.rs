@@ -1,6 +1,5 @@
-use crate::AssignedValue;
-
 use super::rw::Memory;
+use crate::AssignedValue;
 use ff::PrimeField;
 use halo2::{
     halo2curves::CurveAffine,
@@ -12,7 +11,7 @@ use halo2::{
 use std::{collections::BTreeMap, marker::PhantomData};
 
 #[derive(Clone, Debug)]
-pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
+pub struct VarMSMGateNarrow<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) a0: Column<Advice>,
     pub(crate) a1: Column<Advice>,
     pub(crate) a2: Column<Advice>,
@@ -25,23 +24,29 @@ pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) s_double: Selector,
     pub(crate) s_range: Selector,
     pub(crate) s_assign_constant: Selector,
-    pub(crate) s_table: Selector,
+    pub(crate) s_sorted: Selector,
+    pub(crate) s_sorted_read: Selector,
     pub(crate) s_query: Selector,
+    pub(crate) s_query_read: Selector,
     pub(crate) window: usize,
     pub(crate) aux_generator: App,
     pub(crate) memory: Memory<F>,
     pub(crate) constants: BTreeMap<F, AssignedValue<F>>,
+    pub(crate) initial_buckets: Option<Vec<App>>,
     pub(crate) correction_point: Option<App>,
     pub(crate) _marker: PhantomData<(F, App)>,
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateNarrow<F, App> {
     pub fn unassign_constants(&mut self) {
         self.constants.clear();
     }
+    pub fn clear_rw(&mut self) {
+        self.memory.clear();
+    }
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateNarrow<F, App> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         a0: Column<Advice>,
@@ -66,8 +71,9 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         let s_assign_constant = meta.selector();
         let _ = meta.instance_column();
         // address @ a0
-        // x @ a1
-        // y @ a2
+        // x @ a2
+        // y @ a3
+        // timestamp @ fixed (or a3 when sorted)
         meta.create_gate("assign point", |meta| {
             let s = meta.query_selector(s_point);
             let x = meta.query_advice(a0, Rotation::cur());
@@ -148,6 +154,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
                 ],
             )
         });
+
         meta.create_gate("assign constant", |meta| {
             let s = meta.query_selector(s_assign_constant);
             let advice = meta.query_advice(a4, Rotation::cur());
@@ -155,25 +162,68 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             let expr = advice - constant;
             Constraints::with_selector(s, [("expr", expr)])
         });
-        let s_table = meta.complex_selector();
+        let one = Expression::Constant(F::ONE);
+        let s_sorted = meta.complex_selector();
         let s_query = meta.complex_selector();
-        meta.lookup_any("windowed point table", |meta| {
-            let s_table = meta.query_selector(s_table);
-            let table_address = meta.query_fixed(constant, Rotation::cur());
-            let table_x = meta.query_advice(a1, Rotation::cur());
-            let table_y = meta.query_advice(a2, Rotation::cur());
+        let s_query_read = meta.complex_selector();
+        let s_sorted_read = meta.complex_selector();
+        meta.create_gate("transition", |meta| {
+            let s_sort = meta.query_selector(s_sorted);
+            // READ: op == 1, WRITE: op == 0
+            let sorted_op = meta.query_selector(s_sorted_read);
+            let address_prev = meta.query_advice(a0, Rotation::prev());
+            let address = meta.query_advice(a0, Rotation::cur());
+            let x_prev = meta.query_advice(a1, Rotation::prev());
+            let x = meta.query_advice(a1, Rotation::cur());
+            let y_prev = meta.query_advice(a2, Rotation::prev());
+            let y = meta.query_advice(a2, Rotation::cur());
+            // read the latest
+            let latest_x = e!(sorted_op) * (e!(x) - e!(x_prev));
+            let latest_y = e!(sorted_op) * (e!(y) - e!(y_prev));
+            // sorted by address
+            let same_address = e!(address) - e!(address_prev);
+            let next_address = e!(address) - e!(address_prev) - e!(one);
+            let same_address_or_incremented = e!(same_address) * e!(next_address);
+            Constraints::with_selector(
+                s_sort,
+                vec![latest_x, latest_y, same_address_or_incremented],
+            )
+        });
+        // TODO: this lookup can be moved to range gate to reduce number of lookups
+        meta.lookup_any("timestamp diff", |meta| {
+            let s_sorted = meta.query_selector(s_sorted);
+            let timestamp_prev = meta.query_advice(a3, Rotation::prev());
+            let timestamp = meta.query_advice(a3, Rotation::cur());
+            let prev_address = meta.query_advice(a0, Rotation::prev());
+            let address = meta.query_advice(a0, Rotation::cur());
+            let next_address = e!(prev_address) - e!(address) + e!(one);
+            let timestamp_diff = e!(timestamp) - e!(timestamp_prev);
+            let timestamp_diff_in_same_address = e!(timestamp_diff) * e!(next_address);
+            vec![(
+                e!(s_sorted) * e!(timestamp_diff_in_same_address),
+                e!(s_sorted) * e!(timestamp),
+            )]
+        });
+        // TODO: use shuffle arg instead of lookup arg
+        meta.lookup_any("one to one map", |meta| {
             let s_query = meta.query_selector(s_query);
             let query_address = meta.query_advice(a0, Rotation::cur());
             let query_x = meta.query_advice(a1, Rotation::cur());
             let query_y = meta.query_advice(a2, Rotation::cur());
-            let query_offset = meta.query_fixed(constant, Rotation::cur());
+            let query_timestamp: Expression<F> = meta.query_fixed(constant, Rotation::cur());
+            let s_sorted = meta.query_selector(s_sorted);
+            let sorted_address = meta.query_advice(a0, Rotation::cur());
+            let sorted_x = meta.query_advice(a1, Rotation::cur());
+            let sorted_y = meta.query_advice(a2, Rotation::cur());
+            let sorted_timestamp = meta.query_advice(a3, Rotation::cur());
             vec![
+                (e!(s_query) * query_address, e!(s_sorted) * sorted_address),
+                (e!(s_query) * query_x, e!(s_sorted) * sorted_x),
+                (e!(s_query) * query_y, e!(s_sorted) * sorted_y),
                 (
-                    e!(s_query) * (query_address + query_offset),
-                    e!(s_table) * table_address,
+                    e!(s_query) * query_timestamp,
+                    e!(s_sorted) * sorted_timestamp,
                 ),
-                (e!(s_query) * query_x, e!(s_table) * table_x),
-                (e!(s_query) * query_y, e!(s_table) * table_y),
             ]
         });
         meta.lookup("range address", |meta| {
@@ -195,10 +245,13 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             range_table,
             constant,
             window,
-            s_table,
+            s_sorted,
+            s_sorted_read,
             s_query,
+            s_query_read,
             constants: BTreeMap::new(),
             memory: Memory::default(),
+            initial_buckets: None,
             correction_point: None,
             aux_generator,
             _marker: PhantomData,

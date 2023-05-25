@@ -157,7 +157,6 @@ impl<'a, F: Field> RegionCtx<'a, F> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        let col = column.column_type();
         match column.column_type() {
             Any::Advice(_) => self.region.assign_advice(
                 annotation,

@@ -1,12 +1,7 @@
 use std::collections::BTreeMap;
 
 use ff::PrimeField;
-use halo2::{
-    circuit::Value,
-    halo2curves::{pasta::pallas::Base, CurveAffine},
-};
-
-use crate::coords;
+use halo2::{circuit::Value, halo2curves::CurveAffine};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Query<F: PrimeField + Ord> {
@@ -64,27 +59,6 @@ impl<F: PrimeField + Ord> Memory<F> {
         };
         self.queries.push(query.clone());
     }
-    // pub(crate) fn finalize<C: CurveAffine<Base = F>>(&mut self, address: &Value<F>) -> Value<C> {
-    //     let (coords_read, coords_write) = address
-    //         .map(|address| {
-    //             let coords_read = *self.state.get(&address).expect("must be written first");
-    //             let coords_write = (F::ZERO, F::ZERO);
-    //             (coords_read, coords_write)
-    //         })
-    //         .unzip();
-    //     let res = coords_read.map(|coords| C::from_xy(coords.0, coords.1).unwrap());
-    //     let (x0, y0) = coords_read.unzip();
-    //     let (x1, y1) = coords_write.unzip();
-    //     let query = Query {
-    //         address: address.clone(),
-    //         x0,
-    //         y0,
-    //         x1,
-    //         y1,
-    //     };
-    //     self.queries.push(query.clone());
-    //     res
-    // }
     pub(crate) fn sort(&self) -> Value<Vec<SortedQuery<F>>> {
         let sorted_queries = self
             .queries

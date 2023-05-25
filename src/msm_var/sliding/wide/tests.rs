@@ -1,3 +1,4 @@
+use crate::msm_var::sliding::instructions::MSMGate;
 use crate::util::multiexp_naive_var;
 use crate::RegionCtx;
 use ff::Field;
@@ -14,7 +15,7 @@ use halo2::{
 use rand_core::OsRng;
 use std::marker::PhantomData;
 
-use super::config::MSMGate;
+use super::config::VarMSMGateWide;
 
 #[derive(Default, Clone, Debug)]
 struct Params {
@@ -22,7 +23,7 @@ struct Params {
 }
 #[derive(Clone, Debug)]
 struct TestConfig<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
-    msm_gate: MSMGate<F, App>,
+    msm_gate: VarMSMGateWide<F, App>,
 }
 #[derive(Debug, Default)]
 struct MyCircuit<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
@@ -56,7 +57,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let range_table = meta.lookup_table_column();
         let window = params.window;
         let aux = App::CurveExt::random(OsRng).to_affine();
-        let msm_gate = MSMGate::configure(
+        let msm_gate = VarMSMGateWide::configure(
             meta,
             a0,
             a1,
@@ -86,7 +87,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let ly = &mut ly;
         let rand_scalar = || App::Scalar::random(OsRng);
         let rand_point = || App::CurveExt::random(OsRng);
-        // let rand_affine = || rand_point().to_affine();
         let number_of_points = self.number_of_points;
         ly.assign_region(
             || "app",
@@ -109,7 +109,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                     .into_iter()
                     .map(|scalar| v!(scalar))
                     .collect::<Vec<_>>();
-                let res1 = cfg.msm_gate.msm_var(ctx, &points[..], &scalars[..])?;
+                let res1 = cfg.msm_gate.msm(ctx, &points[..], &scalars[..])?;
                 let offset = ctx.offset();
                 println!(
                     "window row per term {}, {}",

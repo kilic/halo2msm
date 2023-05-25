@@ -1,6 +1,7 @@
-use super::config::MSMGate;
+use super::config::VarMSMGateNarrow;
 use crate::{
-    util::{big_to_fe, decompose},
+    msm_var::sliding::instructions::{MSMGate, MSMHelper},
+    util::big_to_fe,
     AssignedPoint, RegionCtx,
 };
 use ff::PrimeField;
@@ -9,7 +10,12 @@ use halo2::{circuit::Value, halo2curves::CurveAffine, plonk::Error};
 use num_bigint::BigUint;
 use num_traits::One;
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMHelper<F, App>
+    for VarMSMGateNarrow<F, App>
+{
+    fn window(&self) -> usize {
+        self.window
+    }
     fn correction_point(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
@@ -65,57 +71,5 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             running_aux = running_aux.to_curve().double().to_affine();
         }
         Ok(points)
-    }
-    fn decompose_scalars(&self, scalars: &[Value<App::Scalar>]) -> Vec<Vec<Value<F>>> {
-        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, self.window);
-        let scalars = scalars
-            .iter()
-            .map(|scalar| {
-                let decomposed = scalar.map(|scalar| {
-                    let mut decomposed: Vec<F> = decompose(scalar, number_of_rounds, self.window);
-                    decomposed.reverse();
-                    decomposed
-                });
-                decomposed.transpose_vec(number_of_rounds)
-            })
-            .collect::<Vec<_>>();
-        scalars
-    }
-    pub fn msm_var(
-        &mut self,
-        ctx: &mut RegionCtx<'_, F>,
-        points: &[Value<App>],
-        scalars: &[Value<App::Scalar>],
-    ) -> Result<AssignedPoint<App>, Error> {
-        let number_of_points = points.len();
-        assert!(number_of_points > 0);
-        assert_eq!(number_of_points, scalars.len());
-        let _ = self.assign_table(ctx, points)?;
-        let scalars = self.decompose_scalars(scalars);
-        let number_of_rounds = div_ceil!(F::NUM_BITS as usize, self.window);
-        let mut acc = None;
-        for round in 0..number_of_rounds {
-            if round != 0 {
-                for _ in 0..self.window {
-                    acc = Some(self.dbl(ctx, &acc.unwrap())?)
-                }
-            }
-            let mut offset = 0;
-            for scalar in scalars.iter() {
-                acc = match &acc {
-                    Some(acc) => {
-                        Some(self.read_add(ctx, &scalar[round], F::from(offset as u64), &acc)?)
-                    }
-                    None => {
-                        assert!(offset == 0 && round == 0);
-                        Some(self.read_point(ctx, &scalar[round], F::from(offset as u64))?)
-                    }
-                };
-                offset += 1 << self.window;
-            }
-        }
-        let correction_point = self.correction_point(ctx, number_of_points)?;
-        let res = self.add(ctx, &acc.unwrap(), &correction_point)?;
-        Ok(res)
     }
 }

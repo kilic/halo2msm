@@ -42,7 +42,7 @@ pub(crate) struct Memory<F: PrimeField + Ord> {
     state: BTreeMap<F, (F, F)>,
 }
 impl<F: PrimeField + Ord> Memory<F> {
-    pub(crate) fn clear_queries(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.queries.clear();
     }
     pub(crate) fn timestamp(&self) -> usize {

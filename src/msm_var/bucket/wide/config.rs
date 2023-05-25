@@ -11,7 +11,7 @@ use halo2::{
 use std::{collections::BTreeMap, marker::PhantomData};
 
 #[derive(Clone, Debug)]
-pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
+pub struct VarMSMGateWide<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) a0: Column<Advice>,
     pub(crate) a1: Column<Advice>,
     pub(crate) a2: Column<Advice>,
@@ -39,13 +39,16 @@ pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) _marker: PhantomData<(F, App)>,
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
     pub fn unassign_constants(&mut self) {
         self.constants.clear();
     }
+    pub fn clear_rw(&mut self) {
+        self.memory.clear();
+    }
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         a0: Column<Advice>,
@@ -234,14 +237,14 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             let sorted_timestamp = meta.query_advice(a5, Rotation::cur());
             vec![
                 (e!(s_query) * query_address, e!(s_sorted) * sorted_address),
-                // (e!(s_query) * query_x_read, e!(s_sorted) * sorted_x_read),
-                // (e!(s_query) * query_y_read, e!(s_sorted) * sorted_y_read),
-                // (e!(s_query) * query_x_write, e!(s_sorted) * sorted_x_write),
-                // (e!(s_query) * query_y_write, e!(s_sorted) * sorted_y_write),
-                // (
-                //     e!(s_query) * query_timestamp,
-                //     e!(s_sorted) * sorted_timestamp,
-                // ),
+                (e!(s_query) * query_x_read, e!(s_sorted) * sorted_x_read),
+                (e!(s_query) * query_y_read, e!(s_sorted) * sorted_y_read),
+                (e!(s_query) * query_x_write, e!(s_sorted) * sorted_x_write),
+                (e!(s_query) * query_y_write, e!(s_sorted) * sorted_y_write),
+                (
+                    e!(s_query) * query_timestamp,
+                    e!(s_sorted) * sorted_timestamp,
+                ),
             ]
         });
         meta.lookup("range address", |meta| {
@@ -278,38 +281,3 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         }
     }
 }
-
-// meta.create_gate("compose", |meta| {
-//     let s = meta.query_selector(s_range);
-//     let a0 = meta.query_advice(a0, Rotation::cur());
-//     let a1 = meta.query_advice(a1, Rotation::cur());
-//     let a2 = meta.query_advice(a2, Rotation::cur());
-//     let a3 = meta.query_advice(a3, Rotation::cur());
-//     let e = meta.query_advice(a4, Rotation::cur());
-//     let composition = meta.query_advice(a4, Rotation::next());
-//     let r = F::from(window as u64);
-//     let expr = a0 + a1 * r + a2 * r * r + a3 * r * r * r + e * r * r * r * r - composition;
-//     Constraints::with_selector(s, [("expr", expr)])
-// });
-// let s_is_equal = meta.selector();
-// meta.create_gate("is equal", |meta| {
-//     let s = meta.query_selector(s_is_equal);
-//     let a = meta.query_advice(a0, Rotation::cur());
-//     let b = meta.query_advice(a1, Rotation::cur());
-//     let x = meta.query_advice(a2, Rotation::cur());
-//     let r = meta.query_advice(a3, Rotation::cur());
-//     let t = meta.query_advice(a4, Rotation::cur());
-//     // 0 = (a - b) * (r * (1 - x) + x) + r - 1
-//     let one = Expression::Constant(F::ONE);
-//     let expr_t = (e!(r) * (e!(x) - e!(one)) + e!(x)) - e!(t);
-//     let expr_rest = (e!(a) - e!(b)) * e!(t) + e!(r) - e!(one);
-//     let expr_bitness = e!(r) * e!(r) - e!(r);
-//     Constraints::with_selector(
-//         s,
-//         [
-//             ("expr_t", expr_t),
-//             ("expr_rest", expr_rest),
-//             ("expr_bitness", expr_bitness),
-//         ],
-//     )
-// });

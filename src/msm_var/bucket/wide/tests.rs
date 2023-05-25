@@ -1,3 +1,5 @@
+use super::super::instructions::MSMGate;
+use super::config::VarMSMGateWide;
 use crate::util::multiexp_naive_var;
 use crate::RegionCtx;
 use ff::Field;
@@ -7,15 +9,13 @@ use group::Group;
 use halo2::circuit::floor_planner::V1;
 use halo2::dev::MockProver;
 use halo2::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Value},
     halo2curves::CurveAffine,
     plonk::Error,
     plonk::{Circuit, ConstraintSystem},
 };
 use rand_core::OsRng;
 use std::marker::PhantomData;
-
-use super::config::MSMGate;
 
 #[derive(Default, Clone, Debug)]
 struct Params {
@@ -24,7 +24,7 @@ struct Params {
 
 #[derive(Clone, Debug)]
 struct TestConfig<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
-    msm_gate: MSMGate<F, App>,
+    msm_gate: VarMSMGateWide<F, App>,
 }
 #[derive(Debug, Default)]
 struct MyCircuit<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
@@ -58,9 +58,8 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let constant = meta.fixed_column();
         let range_table = meta.lookup_table_column();
         let window = params.window;
-        // let aux = App::CurveExt::random(OsRng).to_affine();
-        let aux = (App::CurveExt::generator() * App::Scalar::from(500)).to_affine();
-        let msm_gate = MSMGate::configure(
+        let aux = App::CurveExt::random(OsRng).to_affine();
+        let msm_gate = VarMSMGateWide::configure(
             meta,
             a0,
             a1,
@@ -87,22 +86,15 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                 Value::known($e)
             };
         }
-        macro_rules! f {
-            ($e:expr) => {
-                F::from($e)
-            };
-        }
         let ly = &mut ly;
-        // let rand_scalar = || App::Scalar::random(OsRng);
-        let rand_scalar = || App::Scalar::ONE;
-        // let rand_point = || App::CurveExt::random(OsRng);
-        let rand_point = || App::CurveExt::generator();
+        let rand_scalar = || App::Scalar::random(OsRng);
+        let rand_point = || App::CurveExt::random(OsRng);
         let number_of_points = self.number_of_points;
         ly.assign_region(
             || "app",
             |region| {
                 cfg.msm_gate.unassign_constants();
-                cfg.msm_gate.memory.clear();
+                cfg.msm_gate.clear_rw();
                 let ctx = &mut RegionCtx::new(region);
                 let points: Vec<_> = (0..number_of_points)
                     .map(|_| rand_point())
@@ -123,7 +115,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                     .into_iter()
                     .map(|scalar| v!(scalar))
                     .collect::<Vec<_>>();
-                let res1 = cfg.msm_gate.msm_var(ctx, &points[..], &scalars[..])?;
+                let res1 = cfg.msm_gate.msm(ctx, &points[..], &scalars[..])?;
                 let offset = ctx.offset();
                 println!(
                     "bucket row per term {}, {}",

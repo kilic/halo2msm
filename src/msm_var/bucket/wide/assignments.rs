@@ -1,20 +1,23 @@
+use super::super::instructions::MSMGate;
+use super::config::VarMSMGateWide;
 use crate::{coords, util::decompose, AssignedPoint, AssignedValue, RegionCtx};
 use ff::PrimeField;
 use halo2::{
     circuit::{Layouter, Value},
     halo2curves::CurveAffine,
-    plonk::{Advice, Column, Error},
+    plonk::{Advice, Column, Error, Fixed},
 };
 
-use super::config::MSMGate;
-
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSMGateWide<F, App> {
     fn advice_columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.a0, self.a1, self.a2, self.a3, self.a4, self.a5, self.a6, self.a7, self.a8,
         ]
     }
-    pub fn get_constant(
+    fn fixed_colmns(&self) -> Vec<Column<Fixed>> {
+        vec![self.constant]
+    }
+    fn get_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         scalar: F,
@@ -39,19 +42,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             }
         }
     }
-    pub fn get_constant_point(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        point: &App,
-    ) -> Result<AssignedPoint<App>, Error> {
-        let coordianates = point.coordinates().unwrap();
-        let x = coordianates.x().clone();
-        let y = coordianates.y().clone();
-        let x = self.get_constant(ctx, x)?;
-        let y = self.get_constant(ctx, y)?;
-        Ok(AssignedPoint::new(x, y))
-    }
-    pub fn assign_point(
+    fn assign_point(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         point: &Value<App>,
@@ -78,41 +69,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(x, y))
     }
-    pub fn equal(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        a: &AssignedPoint<App>,
-        b: &AssignedPoint<App>,
-    ) -> Result<(), Error> {
-        ctx.equal(a.x.cell(), b.x.cell())?;
-        ctx.equal(a.y.cell(), b.y.cell())
-    }
-    pub fn add(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        a: &AssignedPoint<App>,
-        b: &AssignedPoint<App>,
-    ) -> Result<AssignedPoint<App>, Error> {
-        ctx.enable(self.s_add)?;
-        let t = a.x.value().zip(b.x.value()).map(|(a_x, b_x)| *b_x - *a_x);
-        let t = t * t;
-        let inverse_t = t.map(|t| t.invert().unwrap());
-        let (out_x, out_y) = a + b;
-        ctx.enable(self.s_add)?;
-        ctx.empty(|| "add:", self.a0.into())?;
-        ctx.copy(|| "add: a_x", self.a1, &a.x)?;
-        ctx.copy(|| "add: a_y", self.a2, &a.y)?;
-        let out_x = ctx.advice(|| "add: out_x", self.a3, out_x)?;
-        let out_y = ctx.advice(|| "add: out_y", self.a4, out_y)?;
-        ctx.copy(|| "add: b_x", self.a5, &b.x)?;
-        ctx.copy(|| "add: b_y", self.a6, &b.y)?;
-        ctx.advice(|| "add: t", self.a7, t)?;
-        ctx.advice(|| "add: inverse_t", self.a8, inverse_t)?;
-        ctx.empty(|| "add: constant", self.constant.into())?;
-        ctx.next();
-        Ok(AssignedPoint::new(out_x, out_y))
-    }
-    pub fn write_point(
+    fn write_point(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         address: &AssignedValue<F>,
@@ -141,7 +98,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(())
     }
-    pub fn read_point(
+    fn read_point(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         address: &AssignedValue<F>,
@@ -167,7 +124,32 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(x, y))
     }
-    pub fn rw_add(
+    fn add(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        a: &AssignedPoint<App>,
+        b: &AssignedPoint<App>,
+    ) -> Result<AssignedPoint<App>, Error> {
+        ctx.enable(self.s_add)?;
+        let t = a.x.value().zip(b.x.value()).map(|(a_x, b_x)| *b_x - *a_x);
+        let t = t * t;
+        let inverse_t = t.map(|t| t.invert().unwrap());
+        let (out_x, out_y) = a + b;
+        ctx.enable(self.s_add)?;
+        ctx.empty(|| "add:", self.a0.into())?;
+        ctx.copy(|| "add: a_x", self.a1, &a.x)?;
+        ctx.copy(|| "add: a_y", self.a2, &a.y)?;
+        let out_x = ctx.advice(|| "add: out_x", self.a3, out_x)?;
+        let out_y = ctx.advice(|| "add: out_y", self.a4, out_y)?;
+        ctx.copy(|| "add: b_x", self.a5, &b.x)?;
+        ctx.copy(|| "add: b_y", self.a6, &b.y)?;
+        ctx.advice(|| "add: t", self.a7, t)?;
+        ctx.advice(|| "add: inverse_t", self.a8, inverse_t)?;
+        ctx.empty(|| "add: constant", self.constant.into())?;
+        ctx.next();
+        Ok(AssignedPoint::new(out_x, out_y))
+    }
+    fn rw_add(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         address: &Value<F>,
@@ -203,7 +185,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn read_add(
+    fn read_add(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         address: &AssignedValue<F>,
@@ -239,7 +221,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn dbl(
+    fn dbl(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         point: &AssignedPoint<App>,
@@ -263,7 +245,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn assign_scalar(
+    fn assign_scalar(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         scalar: &Value<App::Scalar>,
@@ -295,26 +277,8 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         assigned.reverse();
         Ok(assigned)
     }
-    pub fn all_zero(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.empty(|| "all zero", self.a0.into())?;
-        ctx.empty(|| "all zero", self.a1.into())?;
-        ctx.empty(|| "all zero", self.a2.into())?;
-        ctx.empty(|| "all zero", self.a3.into())?;
-        ctx.empty(|| "all zero", self.a4.into())?;
-        ctx.empty(|| "all zero", self.a5.into())?;
-        ctx.empty(|| "all zero", self.a6.into())?;
-        ctx.empty(|| "all zero", self.a7.into())?;
-        ctx.empty(|| "all zero", self.a8.into())?;
-        ctx.empty(|| "all zero", self.constant.into())?;
-        ctx.next();
-        Ok(())
-    }
-    pub fn layout_sorted_rw(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
+    fn layout_sorted_rw(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
         let sorted_queries = self.memory.sort();
-        sorted_queries
-            .clone()
-            .map(|queries| for (i, q) in queries.iter().enumerate() {});
-
         let number_of_queries = self.memory.queries.len();
         ly.assign_region(
             || "sorted rw",
@@ -345,7 +309,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             },
         )
     }
-    pub fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
+    fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
         let max_limb = 1 << self.window;
         ly.assign_table(
             || "range table",
@@ -365,53 +329,3 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         Ok(())
     }
 }
-
-// pub fn window_scalar(
-//     &self,
-//     ctx: &mut RegionCtx<'_, F>,
-//     scalar: Value<App::Scalar>,
-// ) -> Result<Vec<AssignedValue<F>>, Error> {
-//     macro_rules! div_ceil {
-//         ($a:expr, $b:expr) => {
-//             (($a - 1) / $b) + 1
-//         };
-//     }
-//     let window = self.window;
-//     let number_of_bits = F::NUM_BITS as usize;
-//     let number_of_limbs = div_ceil!(number_of_bits, window);
-//     let decomposed = scalar.map(|scalar| {
-//         let decomposed: Vec<F> = decompose(scalar, number_of_limbs, number_of_bits);
-//         decomposed
-//     });
-//     let decomposed = decomposed.transpose_vec(number_of_limbs);
-//     let columns = vec![self.a0, self.a1, self.a2, self.a3];
-//     let zero = self.get_constant(ctx, F::ZERO)?;
-//     let mut assigned = vec![];
-//     let mut sum = Value::known(F::ZERO);
-//     let last_index = div_ceil!(decomposed.len(), 4);
-//     for (i, chunk) in decomposed.chunks(4).rev().enumerate() {
-//         ctx.enable(self.s_range)?;
-//         // assign limbs
-//         for (v, c) in chunk.iter().zip(columns.iter()) {
-//             let limb = ctx.advice(|| "window: assign limb", *c, *v)?;
-//             assigned.push(limb);
-//         }
-//         // first row likely has less than 4 elements
-//         for _ in chunk.len()..4 {
-//             ctx.copy(|| "window: copy zero to unused cells", columns[i], &zero)?;
-//         }
-//         // calculate intermadiate sum
-//         let chunk: Value<Vec<F>> = Value::from_iter(chunk.to_vec());
-//         sum.as_mut()
-//             .zip(chunk)
-//             .map(|(sum, chunk)| *sum += F::sum(chunk.iter()));
-//         // assign intermediate sum
-//         if i == 0 {
-//             ctx.copy(|| "window: start with copy zero", self.a4, &zero)?;
-//         } else {
-//             ctx.advice(|| "window: intermediate sums", self.a4, sum)?;
-//         }
-//         ctx.next();
-//     }
-//     Ok(assigned)
-// }

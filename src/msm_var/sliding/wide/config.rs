@@ -12,7 +12,7 @@ use halo2::{
 use std::{collections::BTreeMap, marker::PhantomData};
 
 #[derive(Clone, Debug)]
-pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
+pub struct VarMSMGateWide<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) a0: Column<Advice>,
     pub(crate) a1: Column<Advice>,
     pub(crate) a2: Column<Advice>,
@@ -39,13 +39,13 @@ pub struct MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>> {
     pub(crate) _marker: PhantomData<(F, App)>,
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
     pub fn unassign_constants(&mut self) {
         self.constants.clear();
     }
 }
 
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         a0: Column<Advice>,

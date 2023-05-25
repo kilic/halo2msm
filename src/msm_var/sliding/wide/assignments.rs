@@ -1,15 +1,24 @@
-use crate::{coords, util::decompose, AssignedPoint, AssignedValue, RegionCtx};
+use super::config::VarMSMGateWide;
+use crate::{
+    coords, msm_var::sliding::instructions::MSMGate, AssignedPoint, AssignedValue, RegionCtx,
+};
 use ff::PrimeField;
 use halo2::{
     circuit::{Layouter, Value},
     halo2curves::CurveAffine,
-    plonk::Error,
+    plonk::{Advice, Column, Error, Fixed},
 };
 
-use super::config::MSMGate;
-
-impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
-    pub fn get_constant(
+impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSMGateWide<F, App> {
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.a0, self.a1, self.a2, self.a3, self.a4, self.a5, self.a6, self.a7, self.a8,
+        ]
+    }
+    fn fixed_colmns(&self) -> Vec<Column<Fixed>> {
+        vec![self.constant]
+    }
+    fn get_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         scalar: F,
@@ -34,19 +43,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
             }
         }
     }
-    pub fn get_constant_point(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        point: &App,
-    ) -> Result<AssignedPoint<App>, Error> {
-        let coordianates = point.coordinates().unwrap();
-        let x = coordianates.x().clone();
-        let y = coordianates.y().clone();
-        let x = self.get_constant(ctx, x)?;
-        let y = self.get_constant(ctx, y)?;
-        Ok(AssignedPoint::new(x, y))
-    }
-    pub fn assign_point(
+    fn assign_point(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         point: &Value<App>,
@@ -73,16 +70,54 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(x, y))
     }
-    pub fn equal(
-        &self,
+    fn read_point(
+        &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        a: &AssignedPoint<App>,
-        b: &AssignedPoint<App>,
-    ) -> Result<(), Error> {
-        ctx.equal(a.x.cell(), b.x.cell())?;
-        ctx.equal(a.y.cell(), b.y.cell())
+        address: &Value<F>,
+        offset: F,
+    ) -> Result<AssignedPoint<App>, Error> {
+        ctx.enable(self.s_query)?;
+        let address = ctx.advice(|| "read point: address", self.a0, *address)?;
+        ctx.enable(self.s_range)?;
+        let a: Value<App> = self.memory.read(&address.value().copied(), offset);
+        let (a_x, a_y) = coords(a).unzip();
+        let x = ctx.advice(|| "read point: a_x", self.a1, a_x)?;
+        let y = ctx.advice(|| "read point: a_y", self.a2, a_y)?;
+        ctx.empty(|| "read point:", self.a3.into())?;
+        ctx.empty(|| "read point:", self.a4.into())?;
+        ctx.empty(|| "read point:", self.a5.into())?;
+        ctx.empty(|| "read point:", self.a6.into())?;
+        ctx.empty(|| "read point:", self.a7.into())?;
+        ctx.empty(|| "read point:", self.a8.into())?;
+        ctx.fixed(|| "read point: offset", self.constant, offset)?;
+        ctx.next();
+        Ok(AssignedPoint::new(x, y))
     }
-    pub fn add(
+    fn write_point(
+        &mut self,
+        ctx: &mut RegionCtx<'_, F>,
+        address: F,
+        offset: F,
+        point: &AssignedPoint<App>,
+    ) -> Result<(), Error> {
+        let coords = point.coords();
+        self.memory.write(address, offset, &coords);
+        let (x, y) = coords.unzip();
+        ctx.fixed(|| "write point: address", self.constant, address + offset)?;
+        ctx.enable(self.s_table)?;
+        ctx.empty(|| "write point:", self.a0.into())?;
+        ctx.advice(|| "write point: x", self.a1, x)?;
+        ctx.advice(|| "write point: y", self.a2, y)?;
+        ctx.empty(|| "write point:", self.a3.into())?;
+        ctx.empty(|| "write point:", self.a4.into())?;
+        ctx.empty(|| "write point:", self.a5.into())?;
+        ctx.empty(|| "write point:", self.a6.into())?;
+        ctx.empty(|| "write point:", self.a7.into())?;
+        ctx.empty(|| "write point:", self.a8.into())?;
+        ctx.next();
+        Ok(())
+    }
+    fn add(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedPoint<App>,
@@ -108,7 +143,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn read_add(
+    fn read_add(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         address: &Value<F>,
@@ -138,54 +173,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn read_point(
-        &mut self,
-        ctx: &mut RegionCtx<'_, F>,
-        address: &Value<F>,
-        offset: F,
-    ) -> Result<AssignedPoint<App>, Error> {
-        ctx.enable(self.s_query)?;
-        let address = ctx.advice(|| "read point: address", self.a0, *address)?;
-        ctx.enable(self.s_range)?;
-        let a: Value<App> = self.memory.read(&address.value().copied(), offset);
-        let (a_x, a_y) = coords(a).unzip();
-        let x = ctx.advice(|| "read point: a_x", self.a1, a_x)?;
-        let y = ctx.advice(|| "read point: a_y", self.a2, a_y)?;
-        ctx.empty(|| "read point:", self.a3.into())?;
-        ctx.empty(|| "read point:", self.a4.into())?;
-        ctx.empty(|| "read point:", self.a5.into())?;
-        ctx.empty(|| "read point:", self.a6.into())?;
-        ctx.empty(|| "read point:", self.a7.into())?;
-        ctx.empty(|| "read point:", self.a8.into())?;
-        ctx.fixed(|| "read point: offset", self.constant, offset)?;
-        ctx.next();
-        Ok(AssignedPoint::new(x, y))
-    }
-    pub fn write_point(
-        &mut self,
-        ctx: &mut RegionCtx<'_, F>,
-        address: F,
-        offset: F,
-        point: &AssignedPoint<App>,
-    ) -> Result<(), Error> {
-        let coords = point.coords();
-        self.memory.write(address, offset, &coords);
-        let (x, y) = coords.unzip();
-        ctx.fixed(|| "write point: address", self.constant, address + offset)?;
-        ctx.enable(self.s_table)?;
-        ctx.empty(|| "write point:", self.a0.into())?;
-        ctx.advice(|| "write point: x", self.a1, x)?;
-        ctx.advice(|| "write point: y", self.a2, y)?;
-        ctx.empty(|| "write point:", self.a3.into())?;
-        ctx.empty(|| "write point:", self.a4.into())?;
-        ctx.empty(|| "write point:", self.a5.into())?;
-        ctx.empty(|| "write point:", self.a6.into())?;
-        ctx.empty(|| "write point:", self.a7.into())?;
-        ctx.empty(|| "write point:", self.a8.into())?;
-        ctx.next();
-        Ok(())
-    }
-    pub fn dbl(
+    fn dbl(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         point: &AssignedPoint<App>,
@@ -208,7 +196,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    pub fn all_zero(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
+    fn all_zero(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         ctx.empty(|| "all zero", self.a0.into())?;
         ctx.empty(|| "all zero", self.a1.into())?;
         ctx.empty(|| "all zero", self.a2.into())?;
@@ -222,7 +210,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> {
         ctx.next();
         Ok(())
     }
-    pub fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
+    fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
         ly.assign_table(
             || "range table",
             |mut table| {
