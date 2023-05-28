@@ -60,7 +60,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
         a6: Column<Advice>,
         a7: Column<Advice>,
         a8: Column<Advice>,
-
         range_table: TableColumn,
         constant: Column<Fixed>,
         window: usize,
@@ -84,8 +83,8 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
         // address @ a0
         // x0 @ a1
         // y0 @ a2
-        // x0 @ a3
-        // y0 @ a4
+        // x1 @ a3
+        // y2 @ a4
         // timestamp @ fixed (or a5 when sorted)
         meta.create_gate("assign point", |meta| {
             let s = meta.query_selector(s_point);

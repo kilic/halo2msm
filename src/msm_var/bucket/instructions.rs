@@ -61,7 +61,6 @@ pub trait MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>>: MSMHelper<F,
             let last = self.get_constant(ctx, F::from(number_of_buckets - 1))?;
             let mut inner_acc = self.read_point(ctx, &last)?;
             let mut sum = inner_acc.clone();
-
             for i in (1..number_of_buckets - 1).rev() {
                 let address = self.get_constant(ctx, F::from(i))?;
                 // sum = B_0 + B_1 + B_2 + ...
@@ -160,7 +159,7 @@ pub trait MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>>: MSMHelper<F,
         for column in fixed_columns.into_iter() {
             ctx.empty(|| "zero", column.into())?;
         }
-
+        ctx.next();
         Ok(())
     }
     fn layout_sorted_rw(&self, ly: &mut impl Layouter<F>) -> Result<(), Error>;

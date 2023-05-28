@@ -53,7 +53,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         let y = ctx.advice(|| "assign y", self.a1, y)?;
         ctx.advice(|| "assign x^2", self.a2, x_square)?;
         ctx.advice(|| "assign x^3", self.a3, x_cube)?;
-        ctx.empty(|| "assign point: constant", self.constant.into())?;
+        ctx.empty(|| "assign point:", self.constant.into())?;
         ctx.next();
         Ok(AssignedPoint::new(x, y))
     }
@@ -121,14 +121,14 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         ctx.copy(|| "add: a_y", self.a2, &a.y)?;
         ctx.copy(|| "add: b_x", self.a3, &b.x)?;
         ctx.copy(|| "add: b_y", self.a4, &b.y)?;
-        ctx.empty(|| "add: constant", self.constant.into())?;
+        ctx.empty(|| "add:", self.constant.into())?;
         ctx.next();
         ctx.empty(|| "add:", self.a0.into())?;
         let out_x = ctx.advice(|| "add: out_x", self.a1, out_x)?;
         let out_y = ctx.advice(|| "add: out_y", self.a2, out_y)?;
         ctx.advice(|| "add: t", self.a3, t)?;
         ctx.advice(|| "add: inverse_t", self.a4, inverse_t)?;
-        ctx.empty(|| "add: constant", self.constant.into())?;
+        ctx.empty(|| "add:", self.constant.into())?;
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
@@ -182,7 +182,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         address: &AssignedValue<F>,
         b: &AssignedPoint<App>,
     ) -> Result<AssignedPoint<App>, Error> {
-        let timestamp = self.memory.queries.len();
+        let timestamp = self.memory.timestamp();
         let a: Value<App> = self.memory.read(&address.value().copied());
         let out = b + &a;
         let (a_x, a_y) = coords(a).unzip();
@@ -229,14 +229,14 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         ctx.advice(|| "double: x^2", self.a2, x_square)?;
         ctx.advice(|| "double: x^4", self.a3, x_square_square)?;
         ctx.empty(|| "double:", self.a4.into())?;
-        ctx.empty(|| "double: constant", self.constant.into())?;
+        ctx.empty(|| "double:", self.constant.into())?;
         ctx.next();
-        ctx.empty(|| "double:", self.a0.into())?;
         ctx.advice(|| "double: t", self.a1, y_square)?;
         let out_x = ctx.advice(|| "double: out_x", self.a2, out_x)?;
         let out_y = ctx.advice(|| "double: out_y", self.a3, out_y)?;
+        ctx.empty(|| "double:", self.a0.into())?;
         ctx.empty(|| "double:", self.a4.into())?;
-        ctx.empty(|| "double: constant", self.constant.into())?;
+        ctx.empty(|| "double:", self.constant.into())?;
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
@@ -274,7 +274,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
     }
     fn layout_sorted_rw(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
         let sorted_queries = self.memory.sort();
-        let number_of_queries = self.memory.queries.len();
+        let number_of_queries = self.memory.timestamp();
         ly.assign_region(
             || "sorted rw",
             |region| {
@@ -300,7 +300,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
                     ctx.advice(|| "sorted rw: y", self.a2, y)?;
                     ctx.advice(|| "sorted rw: timestamp", self.a3, timestamp)?;
                     ctx.empty(|| "sorted rw:", self.a4.into())?;
-                    ctx.empty(|| "sorted rw: constant", self.constant.into())?;
+                    ctx.empty(|| "sorted rw:", self.constant.into())?;
                     ctx.next();
                 }
                 Ok(())

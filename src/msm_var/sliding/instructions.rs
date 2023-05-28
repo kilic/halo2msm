@@ -146,6 +146,7 @@ pub trait MSMGate<F: PrimeField + Ord, App: CurveAffine<Base = F>>: MSMHelper<F,
         for column in fixed_columns.into_iter() {
             ctx.empty(|| "zero", column.into())?;
         }
+        ctx.next();
         Ok(())
     }
     fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error>;

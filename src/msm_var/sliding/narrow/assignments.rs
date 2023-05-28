@@ -185,16 +185,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         ctx.next();
         Ok(AssignedPoint::new(out_x, out_y))
     }
-    fn all_zero(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.empty(|| "all zero", self.a0.into())?;
-        ctx.empty(|| "all zero", self.a1.into())?;
-        ctx.empty(|| "all zero", self.a2.into())?;
-        ctx.empty(|| "all zero", self.a3.into())?;
-        ctx.empty(|| "all zero", self.a3.into())?;
-        ctx.empty(|| "all zero", self.constant.into())?;
-        ctx.next();
-        Ok(())
-    }
     fn layout_range_table(&self, ly: &mut impl Layouter<F>) -> Result<(), Error> {
         ly.assign_table(
             || "range table",

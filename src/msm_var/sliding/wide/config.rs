@@ -171,25 +171,25 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateWide<F, App> {
         });
         let s_table = meta.complex_selector();
         let s_query = meta.complex_selector();
-        // meta.lookup_any("windowed point table", |meta| {
-        //     let s_table = meta.query_selector(s_table);
-        //     let table_address = meta.query_fixed(constant, Rotation::cur());
-        //     let table_x = meta.query_advice(a1, Rotation::cur());
-        //     let table_y = meta.query_advice(a2, Rotation::cur());
-        //     let s_query = meta.query_selector(s_query);
-        //     let query_address = meta.query_advice(a0, Rotation::cur());
-        //     let query_x = meta.query_advice(a1, Rotation::cur());
-        //     let query_y = meta.query_advice(a2, Rotation::cur());
-        //     let query_offset = meta.query_fixed(constant, Rotation::cur());
-        //     vec![
-        //         (
-        //             e!(s_query) * (query_address + query_offset),
-        //             e!(s_table) * table_address,
-        //         ),
-        //         (e!(s_query) * query_x, e!(s_table) * table_x),
-        //         (e!(s_query) * query_y, e!(s_table) * table_y),
-        //     ]
-        // });
+        meta.lookup_any("windowed point table", |meta| {
+            let s_table = meta.query_selector(s_table);
+            let table_address = meta.query_fixed(constant, Rotation::cur());
+            let table_x = meta.query_advice(a1, Rotation::cur());
+            let table_y = meta.query_advice(a2, Rotation::cur());
+            let s_query = meta.query_selector(s_query);
+            let query_address = meta.query_advice(a0, Rotation::cur());
+            let query_x = meta.query_advice(a1, Rotation::cur());
+            let query_y = meta.query_advice(a2, Rotation::cur());
+            let query_offset = meta.query_fixed(constant, Rotation::cur());
+            vec![
+                (
+                    e!(s_query) * (query_address + query_offset),
+                    e!(s_table) * table_address,
+                ),
+                (e!(s_query) * query_x, e!(s_table) * table_x),
+                (e!(s_query) * query_y, e!(s_table) * table_y),
+            ]
+        });
         meta.lookup("range address", |meta| {
             let s = meta.query_selector(s_range);
             let a0 = meta.query_advice(a0, Rotation::cur());

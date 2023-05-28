@@ -88,7 +88,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
         let rand_scalar = || App::Scalar::random(OsRng);
         let rand_point = || App::CurveExt::random(OsRng);
         let number_of_points = self.number_of_points;
-        ly.assign_region(
+        let offset = ly.assign_region(
             || "app",
             |region| {
                 cfg.msm_gate.unassign_constants();
@@ -110,16 +110,17 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                     .map(|scalar| v!(scalar))
                     .collect::<Vec<_>>();
                 let res1 = cfg.msm_gate.msm(ctx, &points[..], &scalars[..])?;
-                let offset = ctx.offset();
-                println!(
-                    "window row per term {}, {}",
-                    self.window,
-                    offset / number_of_points
-                );
                 cfg.msm_gate.equal(ctx, &res0, &res1)?;
-                Ok(())
+                Ok(ctx.offset())
             },
         )?;
+        println!(
+            "wide sliding gate, window {}, # terms: {}, row cost: {}, area cost: {}",
+            self.window,
+            self.number_of_points,
+            offset / number_of_points,
+            9 * offset / number_of_points,
+        );
         cfg.msm_gate.layout_range_table(ly)?;
         Ok(())
     }
