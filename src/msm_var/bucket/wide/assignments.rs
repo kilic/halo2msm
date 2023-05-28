@@ -76,16 +76,22 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         point: &AssignedPoint<App>,
     ) -> Result<(), Error> {
         let timestamp = self.memory.queries.len();
-        let coords = point.coords();
-        self.memory.write(&address.value().copied(), &coords);
-        let (x, y) = coords.unzip();
+        let point = point.coords();
+        let (x1, y1) = point.unzip();
+
+        let previous_point: Value<(App::Base, App::Base)> =
+            self.memory.read::<App>(&address.value().copied());
+        self.memory.write(&address.value().copied(), &point);
+
+        let (x0, y0) = previous_point.unzip();
+
         ctx.enable(self.s_query)?;
         ctx.enable(self.s_range)?;
         ctx.copy(|| "write point: address", self.a0, address)?;
-        ctx.empty(|| "write point: start with zero", self.a1.into())?;
-        ctx.empty(|| "write point: start with zero", self.a2.into())?;
-        ctx.advice(|| "write point: x", self.a3, x)?;
-        ctx.advice(|| "write point: y", self.a4, y)?;
+        ctx.advice(|| "write point: x0", self.a1, x0)?;
+        ctx.advice(|| "write point: y0", self.a2, y0)?;
+        ctx.advice(|| "write point: x1", self.a3, x1)?;
+        ctx.advice(|| "write point: y1", self.a4, y1)?;
         ctx.empty(|| "write point:", self.a5.into())?;
         ctx.empty(|| "write point:", self.a6.into())?;
         ctx.empty(|| "write point:", self.a7.into())?;
@@ -95,6 +101,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
             self.constant,
             F::from(timestamp as u64),
         )?;
+
         ctx.next();
         Ok(())
     }
@@ -104,8 +111,13 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         address: &AssignedValue<F>,
     ) -> Result<AssignedPoint<App>, Error> {
         let timestamp = self.memory.queries.len();
-        let point: Value<App> = self.memory.read(&address.value().copied());
-        let (x, y) = coords(point).unzip();
+
+        let point: Value<(App::Base, App::Base)> =
+            self.memory.read::<App>(&address.value().copied());
+        self.memory.dummy_write(&address.value().copied());
+
+        let (x, y) = point.unzip();
+
         ctx.enable(self.s_query)?;
         ctx.copy(|| "read point: address", self.a0, address)?;
         let x = ctx.advice(|| "read point: x", self.a1, x)?;
@@ -159,14 +171,19 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         ctx.enable(self.s_add)?;
         ctx.enable(self.s_query)?;
         let address = ctx.advice(|| "rwadd: address", self.a0, *address)?;
-        let a: Value<App> = self.memory.read(&address.value().copied());
+
+        let a_coords: Value<(App::Base, App::Base)> =
+            self.memory.read::<App>(&address.value().copied());
+        let a = a_coords.map(|(x, y)| App::from_xy(x, y).unwrap());
         let out = b + &a;
-        let (a_x, a_y) = coords(a).unzip();
         let (out_x, out_y) = coords(out).unzip();
         self.memory
             .write(&address.value().copied(), &out_x.zip(out_y));
+
+        let (a_x, a_y) = coords(a).unzip();
         let t = b.x.value().map(|v| *v) - a_x;
         let t = t * t;
+
         let inverse_t = t.map(|t| t.invert().unwrap());
         ctx.advice(|| "rwadd: a_x", self.a1, a_x)?;
         ctx.advice(|| "rwadd: a_y", self.a2, a_y)?;
@@ -195,12 +212,16 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         ctx.enable(self.s_add)?;
         ctx.enable(self.s_query)?;
         let address = ctx.copy(|| "read add: address", self.a0, address)?;
-        let a: Value<App> = self.memory.read(&address.value().copied());
+
+        let a_coords: Value<(App::Base, App::Base)> =
+            self.memory.read::<App>(&address.value().copied());
+        let a = a_coords.map(|(x, y)| App::from_xy(x, y).unwrap());
         let out = b + &a;
-        let (a_x, a_y) = coords(a).unzip();
         let (out_x, out_y) = coords(out).unzip();
         self.memory
             .write(&address.value().copied(), &out_x.zip(out_y));
+
+        let (a_x, a_y) = coords(a).unzip();
         let t = b.x.value().map(|v| *v) - a_x;
         let t = t * t;
         let inverse_t = t.map(|t| t.invert().unwrap());
@@ -263,7 +284,6 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> MSMGate<F, App> for VarMSM
         let zero = self.get_constant(ctx, F::ZERO)?;
         let mut assigned = vec![];
         for (_, chunk) in decomposed.chunks(NUMBER_OF_COLUMNS).enumerate() {
-            // ctx.enable(self.s_range)?;
             for (v, c) in chunk.iter().zip(columns.iter()) {
                 let limb = ctx.advice(|| "window: assign limb", *c, *v)?;
                 assigned.push(limb);

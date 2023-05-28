@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-
 use ff::PrimeField;
 use halo2::{circuit::Value, halo2curves::CurveAffine};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Query<F: PrimeField + Ord> {
@@ -20,7 +19,6 @@ pub(crate) struct SortedQuery<F: PrimeField + Ord> {
     pub(crate) x1: F,
     pub(crate) y1: F,
 }
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F: PrimeField + Ord> {
     pub(crate) queries: Vec<Query<F>>,
@@ -34,20 +32,31 @@ impl<F: PrimeField + Ord> Memory<F> {
     pub(crate) fn timestamp(&self) -> usize {
         self.queries.len()
     }
-    pub(crate) fn read<C: CurveAffine<Base = F>>(&mut self, address: &Value<F>) -> Value<C> {
+    pub(crate) fn read<C: CurveAffine<Base = F>>(
+        &mut self,
+        address: &Value<F>,
+    ) -> Value<(C::Base, C::Base)> {
         address.map(|address| {
-            let (x, y): &(F, F) = self.state.get(&address).expect("must be written first");
-            C::from_xy(*x, *y).unwrap()
+            self.state
+                .entry(address)
+                .or_insert_with(|| (F::ZERO, F::ZERO))
+                .clone()
         })
     }
+    pub(crate) fn dummy_write(&mut self, address: &Value<F>) {
+        let coords_write = address.map(|_| (F::ZERO, F::ZERO));
+        self.write(address, &coords_write);
+    }
     pub(crate) fn write(&mut self, address: &Value<F>, coords_write: &Value<(F, F)>) {
-        let coords_read = address.zip(coords_write.clone()).map(|(address, coords)| {
-            let coords_read = self.state.insert(address, coords);
-            match coords_read {
-                None => (F::ZERO, F::ZERO),       // first write
-                Some(coords_read) => coords_read, // intermediate write
-            }
-        });
+        let coords_read = address
+            .zip(coords_write.clone())
+            .map(|(address, coords_write)| {
+                let coords_read = self.state.insert(address, coords_write);
+                match coords_read {
+                    None => (F::ZERO, F::ZERO),
+                    Some(coords_read) => coords_read,
+                }
+            });
         let (x0, y0) = coords_read.unzip();
         let (x1, y1) = coords_write.unzip();
         let query = Query {
