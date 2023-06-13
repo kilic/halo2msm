@@ -120,7 +120,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                 self.number_of_points,
                 row_cost,
                 mem_cost,
-                5 * row_cost+mem_cost,
+                5 * (row_cost+mem_cost),
             );
         cfg.msm_gate.layout_range_table(ly)?;
         cfg.msm_gate.layout_sorted_rw(ly)?;

@@ -130,7 +130,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
                 self.number_of_points,
                 row_cost,
                 mem_cost,
-                5 * row_cost+mem_cost,
+                9 * (row_cost+mem_cost),
             );
 
         cfg.msm_gate.layout_range_table(ly)?;
@@ -148,7 +148,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> Circuit<F> for MyCircuit<F
 fn test_bucket_wide_msm_var() {
     use halo2::halo2curves::pasta::{EqAffine, Fq};
     const K: u32 = 21;
-    let window = 8;
+    let window = 9;
     let circuit = MyCircuit::<Fq, EqAffine> {
         _marker: PhantomData::<(Fq, EqAffine)>,
         window,
