@@ -204,8 +204,7 @@ impl<F: PrimeField + Ord, App: CurveAffine<Base = F>> VarMSMGateNarrow<F, App> {
                 e!(s_sorted) * e!(timestamp),
             )]
         });
-        // TODO: use shuffle arg instead of lookup arg
-        meta.lookup_any("one to one map", |meta| {
+        meta.shuffle("one to one map", |meta| {
             let s_query = meta.query_selector(s_query);
             let query_address = meta.query_advice(a0, Rotation::cur());
             let query_x = meta.query_advice(a1, Rotation::cur());
