@@ -2,15 +2,15 @@ Exprerimental native MSM circuits in halo2.
 
 Bucket method and sliding window method are explored. There are two implementations for both approach. While the first one is named as *narrow* and uses 5 advice columns, the other one is called *wide* and uses 9 advice columns. Branching is applied using dynamic lookups rather than conditional selection in order to get rid of list scanning for bit slices. Some benchmarks for each approach is below while additional subset argument witnesses are excluded.
 
-| method  | layout | window | number of terms `a_i * P_i` | row cost per term | area cost per term |
-|---|---|---|---|---|---|
-| sliding window  | narrow | 4 | 10000 | 177 | 885 |
-| sliding window  | wide   | 4 | 10000 | 98  | 882 |
-| bucket          | narrow | 8 | 10000 | 137 | 685 |
-| bucket          | wide   | 8 | 10000 | 71  | 639 |
-| bucket          | narrow | 6 | 10000 | 86  | 430 |
+| method  | base | layout | window | number of terms `a_i * P_i` | row cost per term | area cost per term |
+|---|---|---|---|---|---|---|
+| sliding window  | var | narrow | 4 | 10000 | 177 | 885 |
+| sliding window  | var | wide   | 4 | 10000 | 98  | 882 |
+| bucket          | var | narrow | 8 | 10000 | 137 | 685 |
+| bucket          | var | wide   | 8 | 10000 | 71  | 639 |
+| sliding window  | fixed | narrow | 6 | 10000 | 86  | 430 |
 
-Note that area cost is only measures area of frontend cells. Additional cost of lookup and permutation argument is not included.
+Note that area cost only measures area of frontend cells. Additional costs of lookup and permutation argument is not included.
 
 Bucket method consumes 3 subset arguments:
 
