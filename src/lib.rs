@@ -20,6 +20,7 @@ macro_rules! div_ceil {
     };
 }
 pub mod msm_var;
+pub mod msm_fix;
 pub(crate) mod util;
 
 pub type AssignedValue<F> = AssignedCell<F, F>;
